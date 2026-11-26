@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import vm from 'node:vm';
 import ts from 'typescript';
 
-test('Android background bounds inference, reuses composed frames and releases cache', async () => {
+test('Android background bounds frame size and composites each fresh camera frame', async () => {
   let calls = 0;
   let options;
   let clock = 1000;
@@ -38,19 +38,14 @@ test('Android background bounds inference, reuses composed frames and releases c
   assert.equal(input.closed,true);
   clock += 50;
   await transformer.transform(new Frame({width:1920,height:1080},{timestamp:2}),sink);
-  assert.equal(calls,1);
+  assert.equal(calls,2);
   assert.equal(output[1].timestamp,2);
   clock += 200;
   await transformer.transform(new Frame({width:1920,height:1080}),sink);
-  assert.equal(calls,2);
-  const previousCache = transformer.cachedFrame;
+  assert.equal(calls,3);
   await transformer.update({ imagePath: 'new-image' });
-  assert.equal(previousCache.closed, true);
-  assert.equal(transformer.cachedFrame, undefined);
-  await transformer.transform(new Frame({width:1920,height:1080}),sink);
-  assert.equal(calls,3, 'effect changes immediately produce a fresh composition');
-  const cache = transformer.cachedFrame;
+  await transformer.transform(new Frame({width:180,height:320},{timestamp:4}),sink);
+  assert.equal(output.at(-1).timestamp,4);
+  assert.equal(calls,4);
   await transformer.destroy();
-  assert.equal(cache.closed,true);
 });
-

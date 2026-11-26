@@ -10,6 +10,8 @@ export class AndroidCanvasBackgroundTransformer {
   private output?: OffscreenCanvas;
   private person?: OffscreenCanvas;
   private mask?: OffscreenCanvas;
+  private nextMaskAt = 0;
+  private maskPixels?: ImageData;
   constructor(options: BackgroundOptions) { this.options = options; }
 
   async init(_options: VideoTransformerInitOptions) {
@@ -24,6 +26,8 @@ export class AndroidCanvasBackgroundTransformer {
   async restart(options: VideoTransformerInitOptions) { await this.destroy(); await this.init(options); }
   async destroy(_options?: TrackTransformerDestroyOptions) {
     this.segmenter?.close(); this.segmenter = undefined;
+    this.nextMaskAt = 0;
+    this.maskPixels = undefined;
     this.output = this.person = this.mask = undefined;
     this.image = undefined; this.imagePath = undefined;
   }
@@ -49,39 +53,45 @@ export class AndroidCanvasBackgroundTransformer {
     const person = this.person.getContext('2d')!;
     try {
       // Read CPU bytes directly. Never convert masks to unsupported GPU float textures.
-      this.segmenter.segmentForVideo(frame, performance.now(), result => {
-        try {
-          const category = result.categoryMask;
-          if (!category) throw new Error('Person segmentation mask unavailable');
-          this.mask ??= new OffscreenCanvas(category.width,category.height);
-          if (this.mask.width !== category.width) this.mask.width = category.width;
-          if (this.mask.height !== category.height) this.mask.height = category.height;
-          const bytes = category.getAsUint8Array();
-          const pixels = new Uint8ClampedArray(bytes.length * 4);
-          for (let i=0;i<bytes.length;i++) {
-            pixels[i*4] = pixels[i*4+1] = pixels[i*4+2] = 255;
-            pixels[i*4+3] = bytes[i] === 0 ? 255 : 0;
-          }
-          this.mask.getContext('2d')!.putImageData(new ImageData(pixels,category.width,category.height),0,0);
-          person.clearRect(0,0,width,height);
-          person.globalCompositeOperation = 'source-over';
-          person.drawImage(frame,0,0,width,height);
-          person.globalCompositeOperation = 'destination-in';
-          person.drawImage(this.mask,0,0,width,height);
-          person.globalCompositeOperation = 'source-over';
-          output.clearRect(0,0,width,height);
-          if (this.image) {
-            const scale = Math.max(width/this.image.naturalWidth,height/this.image.naturalHeight);
-            const w=this.image.naturalWidth*scale,h=this.image.naturalHeight*scale;
-            output.drawImage(this.image,(width-w)/2,(height-h)/2,w,h);
-          } else {
-            output.save(); output.filter = `blur(${this.options.blurRadius ?? 12}px)`;
-            output.drawImage(frame,-20,-20,width+40,height+40); output.restore();
-          }
-          output.drawImage(this.person!,0,0,width,height);
-          controller.enqueue(new VideoFrame(this.output!,{timestamp:frame.timestamp}));
-        } finally { result.close(); }
-      });
+      if (!this.mask || performance.now() >= this.nextMaskAt) {
+        this.segmenter.segmentForVideo(frame, performance.now(), result => {
+          try {
+            const category = result.categoryMask;
+            if (!category) throw new Error('Person segmentation mask unavailable');
+            this.mask ??= new OffscreenCanvas(category.width,category.height);
+            if (this.mask.width !== category.width) this.mask.width = category.width;
+            if (this.mask.height !== category.height) this.mask.height = category.height;
+            const bytes = category.getAsUint8Array();
+            if (this.maskPixels?.width !== category.width || this.maskPixels.height !== category.height) {
+              this.maskPixels = new ImageData(category.width, category.height);
+            }
+            const pixels = this.maskPixels.data;
+            for (let i=0;i<bytes.length;i++) {
+              pixels[i*4+3] = bytes[i] === 0 ? 255 : 0;
+            }
+            this.mask.getContext('2d')!.putImageData(this.maskPixels,0,0);
+          } finally { result.close(); }
+        });
+        this.nextMaskAt = performance.now() + 150;
+      }
+      if (!this.mask) throw new Error('Person segmentation mask unavailable');
+      person.clearRect(0,0,width,height);
+      person.globalCompositeOperation = 'source-over';
+      person.drawImage(frame,0,0,width,height);
+      person.globalCompositeOperation = 'destination-in';
+      person.drawImage(this.mask,0,0,width,height);
+      person.globalCompositeOperation = 'source-over';
+      output.clearRect(0,0,width,height);
+      if (this.image) {
+        const scale = Math.max(width/this.image.naturalWidth,height/this.image.naturalHeight);
+        const w=this.image.naturalWidth*scale,h=this.image.naturalHeight*scale;
+        output.drawImage(this.image,(width-w)/2,(height-h)/2,w,h);
+      } else {
+        output.save(); output.filter = `blur(${this.options.blurRadius ?? 12}px)`;
+        output.drawImage(frame,-20,-20,width+40,height+40); output.restore();
+      }
+      output.drawImage(this.person!,0,0,width,height);
+      controller.enqueue(new VideoFrame(this.output!,{timestamp:frame.timestamp}));
     } finally { frame.close(); }
   }
 }

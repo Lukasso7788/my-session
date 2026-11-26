@@ -155,8 +155,6 @@ class PersonBackgroundTransformer {
   private surface = new FrameColorCorrectionSurface();
   // Android WebView shares segmentation and room UI on the renderer thread.
   private readonly mobile = typeof navigator !== "undefined" && /Android/i.test(navigator.userAgent);
-  private lastProcessedAt = -Infinity;
-  private cachedFrame?: VideoFrame;
   private backgroundCanvas?: OffscreenCanvas;
 
   constructor(options: PersonBackgroundOptions) {
@@ -196,30 +194,16 @@ class PersonBackgroundTransformer {
     if (Object.keys(backgroundOptions).length > 0) {
       await this.background.update(backgroundOptions);
     }
-    // A changed image/blur must not display the previous cached composition.
-    this.cachedFrame?.close();
-    this.cachedFrame = undefined;
-    this.lastProcessedAt = -Infinity;
   }
 
   private clearMobileFrames() {
-    this.cachedFrame?.close();
-    this.cachedFrame = undefined;
     this.backgroundCanvas = undefined;
-    this.lastProcessedAt = -Infinity;
   }
 
   async transform(frame: VideoFrame, controller: TransformStreamDefaultController<VideoFrame>) {
-    if (!this.mobile) return this.transformBackground(frame, controller);
-    const now = performance.now();
-    if (this.cachedFrame && now - this.lastProcessedAt < 150) {
-      // Preserve the composed picture between inference frames, never leak raw camera.
-      controller.enqueue(new VideoFrame(this.cachedFrame, { timestamp: frame.timestamp }));
-      frame.close();
-      return;
+    if (!this.mobile || Math.max(frame.displayWidth, frame.displayHeight) <= 480) {
+      return this.transformBackground(frame, controller);
     }
-    // Yield to touch/layout before doing bounded-resolution synchronous inference.
-    await new Promise<void>((resolve) => setTimeout(resolve, 0));
     const scale = Math.min(1, 480 / Math.max(frame.displayWidth, frame.displayHeight));
     const width = Math.max(1, Math.round(frame.displayWidth * scale));
     const height = Math.max(1, Math.round(frame.displayHeight * scale));
@@ -231,16 +215,7 @@ class PersonBackgroundTransformer {
     ctx.drawImage(frame, 0, 0, width, height);
     const reduced = new VideoFrame(this.backgroundCanvas, { timestamp: frame.timestamp });
     frame.close();
-    const cachingController = {
-      enqueue: (output: VideoFrame) => {
-        this.cachedFrame?.close();
-        this.cachedFrame = output.clone();
-        controller.enqueue(output);
-      },
-    } as TransformStreamDefaultController<VideoFrame>;
-    await this.transformBackground(reduced, cachingController);
-    // Measure from completion, so expensive frames always leave UI breathing room.
-    this.lastProcessedAt = performance.now();
+    await this.transformBackground(reduced, controller);
   }
 
   private async transformBackground(
