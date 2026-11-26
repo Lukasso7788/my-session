@@ -1052,11 +1052,12 @@ function VideoTileInner({
                 >
                     <div className="min-w-0 max-w-[calc(100%_-_2.5rem)]">
                         <div className="flex min-w-0 items-center gap-[0.4rem]">
-                            <span
-                                className={`min-w-0 truncate font-inter ${isCompact ? "text-[10px]" : "text-[12px]"} font-semibold leading-none ${!hasCameraOn && isLight ? "text-[#242424]" : "text-white drop-shadow-md"}`}
+                            <button
+                                type="button" disabled={!isLocal || !onEditName} onClick={(e)=>{e.stopPropagation();onEditName?.();}} title={isLocal && onEditName ? "Edit name" : undefined}
+                                className={`pointer-events-auto text-left disabled:cursor-default enabled:cursor-text enabled:hover:underline enabled:hover:decoration-dotted enabled:hover:underline-offset-4 min-w-0 truncate font-inter ${isCompact ? "text-[10px]" : "text-[12px]"} font-semibold leading-none ${!hasCameraOn && isLight ? "text-[#242424]" : "text-white drop-shadow-md"}`}
                             >
                                 {label || "User"}
-                            </span>
+                            </button>
 
                             {status ? (
                                 <span

@@ -147,6 +147,9 @@ export function PreJoinModal({
   // Pre-join intentionally uses the light chat palette in every room theme.
   const theme: RoomTheme = "light";
   const isLight = true;
+  const [editingName, setEditingName] = useState(false);
+  const [nameDraft, setNameDraft] = useState("");
+  const openNameEditor = () => { setNameDraft(value.displayName); setEditingName(true); };
   const [compactMenu, setCompactMenu] = useState<"mic" | "camera" | "processing" | null>(null);
   const compactMenuRef = useRef(compactMenu);
   compactMenuRef.current = compactMenu;
@@ -411,15 +414,9 @@ export function PreJoinModal({
     : videoFxMode === "blur"
       ? "blur"
       : savedBackground ? "custom" : "image";
-  const [selectedEffect, setSelectedEffect] = useState<Exclude<BackgroundChoice, "off">>("blur");
-  useEffect(() => {
-    if (activeBackgroundChoice !== "off") setSelectedEffect(activeBackgroundChoice);
-  }, [activeBackgroundChoice]);
-
   const applyBackgroundChoice = (choice: BackgroundChoice) => {
     setCompactMenu(null);
     setLocalFxMessage("");
-    if (choice !== "off") setSelectedEffect(choice);
     if (choice === "off" || choice === "blur") {
       setExpandedBackgroundChoice(null);
       void Promise.resolve(onApplyVideoFx(choice));
@@ -435,7 +432,7 @@ export function PreJoinModal({
     }
   };
   const visibleBackgroundChoice = expandedBackgroundChoice || activeBackgroundChoice;
-  const renderedBackgroundChoice = visibleBackgroundChoice === "off" ? selectedEffect : visibleBackgroundChoice;
+  const renderedBackgroundChoice = visibleBackgroundChoice;
 
   if (!open) return null;
 
@@ -479,7 +476,11 @@ export function PreJoinModal({
               <VideoTile tileId="prejoin-self" label={value.displayName || "You"} isLocal theme={tilePreview.theme || _roomTheme}
                 videoTrack={value.videoEnabled ? previewVideoTrack || undefined : undefined} avatarUrl={tilePreview.avatarUrl}
                 micMuted={!value.audioEnabled} participantTimeZone={tilePreview.timeZone} taskList={tilePreview.task.trim() ? [tilePreview.task.trim()] : []}
-                showTaskOverlay showBottomShade showMenuButton={false} mirrorVideo={cameraMirrored} onEditName={() => document.getElementById('prejoin-profile-name')?.focus()}/>
+                showTaskOverlay showBottomShade showMenuButton={false} mirrorVideo={cameraMirrored} onEditName={openNameEditor}/>
+              {editingName && <form className="ms-prejoin-name-popover" onSubmit={e=>{e.preventDefault();onChange({...value,displayName:nameDraft.trim() || value.displayName});setEditingName(false);}}>
+                <label htmlFor="prejoin-name-editor">Your name</label><input autoFocus id="prejoin-name-editor" aria-label="Edit display name" value={nameDraft} onChange={e=>setNameDraft(e.target.value)} onKeyDown={e=>{if(e.key==='Escape'){e.preventDefault();e.stopPropagation();setEditingName(false);}}}/>
+                <div><button type="button" onClick={()=>setEditingName(false)}>Cancel</button><button type="submit">Save</button></div>
+              </form>}
             </div>
           </> : <>
           <div className="w-full overflow-hidden">
@@ -551,11 +552,15 @@ export function PreJoinModal({
                     onChange={(videoInputId) => onChange({ ...value, videoInputId })}
                     options={[{ value: "", label: "Default" }, ...devices.videoInputs.map((d, i) => ({ value: d.deviceId, label: deviceLabel(d, `Camera ${i + 1}`) }))]} />
                 <button type="button" className={`rounded-xl px-3 py-2 text-xs ${btnGhost}`} onClick={onRefreshDevices}>Refresh devices</button>
+                {onCameraMirroredChange && <label className="ms-prejoin-mirror-setting"><input type="checkbox" checked={cameraMirrored} onChange={e=>onCameraMirroredChange(e.target.checked)}/><span>Mirror camera</span></label>}
                 <p className={`text-[11px] leading-4 ${labelCls}`}>Device names appear after browser permission is granted.</p>
               </div>}
               {compactMenu === 'processing' && <>
-                <h3 className="text-xs font-semibold">Video</h3>
-                {onCameraMirroredChange && <label className="ms-prejoin-mirror-setting"><input type="checkbox" checked={cameraMirrored} onChange={e=>onCameraMirroredChange(e.target.checked)}/><span>Mirror camera</span></label>}
+                {onCameraMirroredChange && <>
+                  <h3 className="text-xs font-semibold">Video</h3>
+                  <label className="ms-prejoin-mirror-setting"><input type="checkbox" checked={cameraMirrored} onChange={e=>onCameraMirroredChange(e.target.checked)}/><span>Mirror camera</span></label>
+                </>}
+
                 <div id="prejoin-audio-processing">
                 <h3 className="mt-4 text-xs font-semibold">Audio processing</h3>
                 <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -578,24 +583,27 @@ export function PreJoinModal({
           </div>
           {tilePreview && <>
             <div className="ms-prejoin-profile-editor">
-              <label><span>Name</span><input id="prejoin-profile-name" aria-label="Display name" value={value.displayName} onChange={e=>onChange({...value,displayName:e.target.value})}/></label>
-              <div><label htmlFor="prejoin-timezone">Time zone</label><TimeZonePicker icon="globe" id="prejoin-timezone" value={tilePreview.timeZone} onChange={tilePreview.onTimeZoneChange}/></div>
-              <label className="ms-prejoin-profile-task"><span>Highlighted task</span><input aria-label="Highlighted task" placeholder="What are you working on?" value={tilePreview.task} onChange={e=>tilePreview.onTaskChange(e.target.value)}/><small>Saved at the top of your Tasks panel when you join.</small></label>
+
+              <label className="ms-prejoin-profile-task"><span>Highlighted task</span><input aria-label="Highlighted task" placeholder="What are you working on?" value={tilePreview.task} onChange={e=>tilePreview.onTaskChange(e.target.value)}/></label>
+              <div className="ms-prejoin-outlined-zone"><label htmlFor="prejoin-timezone">Time zone</label><TimeZonePicker icon="globe" id="prejoin-timezone" value={tilePreview.timeZone} onChange={tilePreview.onTimeZoneChange}/></div>
+
             </div>
           </>}
+
               {!hideBackgroundFx && <div id="prejoin-background-panel" className="ms-prejoin-compact-background mt-4">
-                <h3 className="mb-2 text-[12px] font-semibold">BG effects</h3>
+                <div className="ms-prejoin-effects-heading"><div className="ms-prejoin-bg-inline"><h3 className="text-[12px] font-semibold">BG effects</h3>
                 <div className="ms-prejoin-effect-switcher" role="group" aria-label="Background effect choices">
                   {(["off", "blur", "image", "custom"] as const).map((choice) => (
-                    <button key={choice} type="button" aria-pressed={activeBackgroundChoice === choice}
+                    <button key={choice} type="button" aria-label={choice === "off" ? "No background" : choice === "blur" ? "Blur" : choice === "image" ? "Image" : "Custom background"} aria-pressed={activeBackgroundChoice === choice}
                       disabled={!!fxBlockedReason || fxApplying} onClick={() => applyBackgroundChoice(choice)}>
                       <BackgroundChoiceIcon choice={choice} />
-                      <span>{choice === "off" ? "None" : choice === "blur" ? "Blur" : choice === "image" ? "Image" : "Custom"}</span>
+                      <span className="ms-prejoin-effect-text">{choice === "off" ? "None" : choice === "blur" ? "Blur" : choice === "image" ? "Image" : "Custom"}</span>
+                      <span className="ms-prejoin-effect-tip" aria-hidden="true">{choice === "off" ? "No background" : choice === "blur" ? "Blur" : choice === "image" ? "Image" : "Custom"}</span>
                     </button>
                   ))}
-                </div>
+                </div></div></div>
 
-              {!hideBackgroundFx ? (
+              {!hideBackgroundFx && (visibleBackgroundChoice !== "off" || fxError) ? (
                 <div className={`rounded-[20px] ${inputWrap}`}>
                   <span className="sr-only" role="status">
                     {fxApplying ? "Applying…" : localFxMessage || fxStatusText || (videoFxMode === "off" ? "Off" : videoFxMode === "blur" ? "Blur" : "Image")}
