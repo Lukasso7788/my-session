@@ -6385,6 +6385,12 @@ export function RoomPageLiveKit({
     );
   }, [isMobileOrTabletDevice, isMobileQuery, isTabletQuery, isChromeOS]);
 
+  const mobileCameraFps = typeof window !== "undefined" &&
+    /Android/i.test(window.navigator.userAgent) &&
+    typeof (window as Window & { MySessionNative?: { postMessage?: unknown } }).MySessionNative?.postMessage === "function"
+    ? 24
+    : 8;
+
   // Background blur and image replacement are available on every form factor.
   // Mobile devices still use a lighter preview preset below for performance.
   const shouldDisableBackgroundFx = false;
@@ -6396,7 +6402,7 @@ export function RoomPageLiveKit({
       return {
         width: 320,
         height: 180,
-        fps: 8,
+        fps: mobileCameraFps,
       };
     }
 
@@ -6421,7 +6427,7 @@ export function RoomPageLiveKit({
       height: capturePreset.height,
       fps: capturePreset.fps,
     };
-  }, [cameraQualityOverride, lowPowerMobileMode, isChromeOS, deviceTier, capturePreset]);
+  }, [cameraQualityOverride, lowPowerMobileMode, mobileCameraFps, isChromeOS, deviceTier, capturePreset]);
 
   const [prejoin, setPrejoin] = useState<PreJoinSettings>(() => {
     const audioProcessing = readAudioProcessingPreferences();
@@ -12684,7 +12690,7 @@ export function RoomPageLiveKit({
           width: cameraQualityOverride?.width ?? (lowPowerMobileMode ? 320 : capturePreset.width),
           height: cameraQualityOverride?.height ?? (lowPowerMobileMode ? 180 : capturePreset.height),
         },
-        frameRate: cameraQualityOverride?.fps ?? (lowPowerMobileMode ? 8 : capturePreset.fps),
+        frameRate: cameraQualityOverride?.fps ?? (lowPowerMobileMode ? mobileCameraFps : capturePreset.fps),
       } as any;
       const requestedDeviceId = String(args.requestedDeviceId || "").trim();
       const attempts = [
@@ -12805,6 +12811,7 @@ export function RoomPageLiveKit({
       capturePreset.width,
       logRoomDiagnostic,
       lowPowerMobileMode,
+      mobileCameraFps,
       releaseLocalCameraForRetry,
       writeConnectionDiagnostic,
     ],
@@ -13813,7 +13820,7 @@ export function RoomPageLiveKit({
       ?.getTrackPublication(Track.Source.Camera)?.track as LocalVideoTrack | undefined)
       ?.mediaStreamTrack;
     if (!source || source.readyState !== "live") return;
-    const preset = cameraQualityOverride ?? (lowPowerMobileMode ? { width: 320, height: 180, fps: 8 } : capturePreset);
+    const preset = cameraQualityOverride ?? (lowPowerMobileMode ? { width: 320, height: 180, fps: mobileCameraFps } : capturePreset);
     void source.applyConstraints({
       width: { ideal: preset.width },
       height: { ideal: preset.height },
@@ -13821,7 +13828,7 @@ export function RoomPageLiveKit({
     }).catch((error) => {
       console.warn("[room] camera quality change was not applied", error);
     });
-  }, [sendVideoQuality, cameraQualityOverride, roomState, lowPowerMobileMode, capturePreset]);
+  }, [sendVideoQuality, cameraQualityOverride, roomState, lowPowerMobileMode, mobileCameraFps, capturePreset]);
 
   const changeSendVideoQuality = useCallback((value: VideoQualityChoice) => {
     setSendVideoQuality(value);
