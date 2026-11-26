@@ -584,7 +584,7 @@ export function PreJoinModal({
           {tilePreview && <>
             <div className="ms-prejoin-profile-editor">
 
-              <label className="ms-prejoin-profile-task"><span>Highlighted task</span><input aria-label="Highlighted task" placeholder="What are you working on?" value={tilePreview.task} onChange={e=>tilePreview.onTaskChange(e.target.value)}/></label>
+              <label className="ms-prejoin-profile-task"><span>Highlighted task</span><img className="ms-prejoin-task-field-icon" src="/icons/tasks-light.svg" alt="" aria-hidden="true"/><input aria-label="Highlighted task" placeholder="What are you working on?" value={tilePreview.task} onChange={e=>tilePreview.onTaskChange(e.target.value)}/></label>
               <div className="ms-prejoin-outlined-zone"><label htmlFor="prejoin-timezone">Time zone</label><TimeZonePicker icon="globe" id="prejoin-timezone" value={tilePreview.timeZone} onChange={tilePreview.onTimeZoneChange}/></div>
 
             </div>

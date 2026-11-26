@@ -465,3 +465,6 @@
 .ms-prejoin-name-popover>div{display:flex;justify-content:flex-end;gap:8px}
 .ms-prejoin-name-popover button{padding:6px 10px;border-radius:8px;background:#F0F2F5}
 .ms-prejoin-name-popover button[type=submit]{background:#5286F6;color:white}
+
+.ms-prejoin-profile-task .ms-prejoin-task-field-icon{position:absolute;left:12px;top:23px;transform:translateY(-50%);width:16px;height:16px;opacity:.65;pointer-events:none}
+.ms-prejoin-profile-editor .ms-prejoin-profile-task input{padding-left:38px}

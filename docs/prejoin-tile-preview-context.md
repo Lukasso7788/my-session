@@ -54,3 +54,7 @@ Latest local proposal: removed permanent name input; actual tile name now clicka
 Latest local preference: Mirror camera is available in BOTH camera-device menu and Audio & video settings (Video section). Both controlled by cameraMirrored/onCameraMirroredChange, no duplicated state; parent persists same previewMirrored preference. No commit/push.
 
 Final approved ordering: highlighted task left, timezone right. Includes all accumulated local revisions (compact text device lists, mirror in two locations, floating field labels, 506px modal, actual tile name editing via pencil/name hover, full-width labeled BG strip, instant tooltips and no Blur strength for Off). User authorized commit/push after swapping fields.
+
+Local follow-up after de941f48: highlighted task input now includes existing /icons/tasks-light.svg (same Tasks icon used by room), 16px with left inset matching timezone icon; input padding 38px. Decorative aria-hidden icon. No push for this follow-up.
+
+User approved task-field icon follow-up for main. Browser confirmed SVG loaded; diff check passed. Publishing exact modal/CSS/context paths.
