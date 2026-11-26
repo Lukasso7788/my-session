@@ -142,7 +142,7 @@ import {
   type RoomTheme,
 } from "./livekit/LiveKitUI";
 
-import { savePrejoinTask } from "../lib/prejoinTask.mjs";
+import { savePrejoinTask, mergePrejoinHighlightedTask } from "../lib/prejoinTask.mjs";
 import { PreJoinModal } from "./livekit/PreJoinModalLiveKit";
 import { VideoTile } from "./livekit/VideoTileLiveKit";
 import { RoomStatusMenu } from "./livekit/RoomStatusMenu";
@@ -21899,7 +21899,7 @@ export function RoomPageLiveKit({
           } catch { }
           window.dispatchEvent(new CustomEvent("mysession:task-order-synced",{detail:{userId:authUserId,order:saved.order,source:"prejoin"}}));
           emitRoomTasksSync({action:"insert",userId:authUserId,taskId:saved.task.id,sessionId:session?.id});
-          handlePublicPanelTasksChange([{text:saved.task.text,completed:false},...ownTileTasks.filter(task=>task.text!==saved.task.text)]);
+          handlePublicPanelTasksChange(mergePrejoinHighlightedTask(saved.task.text, ownTileTasks));
         }
       }
     } catch (error) {

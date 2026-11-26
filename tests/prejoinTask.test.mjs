@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { savePrejoinTask } from '../src/lib/prejoinTask.mjs';
+import { savePrejoinTask, mergePrejoinHighlightedTask } from '../src/lib/prejoinTask.mjs';
 function database(rows=[],failRead=false,failWrite=false) {
   return { rows, writes:0, from(table) {
     assert.equal(table,'panel_intentions');
@@ -18,4 +18,9 @@ test('prejoin task persists public and first, retry uses same id without duplica
 test('empty draft creates nothing',async()=>assert.equal(await savePrejoinTask(null,{text:' '}),null));
 test('read or write failures propagate, so join cannot claim successful save',async()=>{
  for(const db of [database([],true),database([],false,true)]) await assert.rejects(savePrejoinTask(db,{userId:'self',taskId:'draft',text:'Work'}));
+});
+
+test('joining before tile tasks hydrate publishes highlighted task without throwing',()=>{
+ assert.deepEqual(mergePrejoinHighlightedTask('Work',undefined),[{text:'Work',completed:false}]);
+ assert.deepEqual(mergePrejoinHighlightedTask('Work',[{text:'Old',completed:false},{text:'Work',completed:true}]),[{text:'Work',completed:false},{text:'Old',completed:false}]);
 });

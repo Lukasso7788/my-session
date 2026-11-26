@@ -28,3 +28,5 @@ Latest button sizing: both header actions reduced to 38px height, 13px text, 15p
 Layout follow-up: moved profile editor below the microphone/camera/audio control row, so media controls sit immediately under actual preview tile. Both header actions now 38px as requested. Local only.
 
 Publication approved by user. Final build passed (11.76s), 8/8 focused tests passed, diff check passed; origin/main still 57bf5de0 before publication. Committing exact changed paths and pushing to main. Full-project tsc remains failing on existing errors; production save/join still needs authenticated verification.
+
+Hotfix: reported undefined.filter after save came from ownTileTasks before initial hydration. Replaced direct filtering with mergePrejoinHighlightedTask, accepting an unhydrated list and keeping new task first while removing same-text duplicate from public tile projection. Database stable-id upsert unchanged. Regression test covers undefined and existing duplicate/completed tile states; 9/9 focused tests passed. No live database mutation performed.

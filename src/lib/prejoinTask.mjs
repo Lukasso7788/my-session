@@ -14,3 +14,8 @@ export async function savePrejoinTask(client, { userId, taskId, text }) {
   if (error || !data) throw error || new Error('Task was not saved.');
   return { task: data, order: [taskId, ...others.map(row => row.id)] };
 }
+
+/** The tile list may not be hydrated until after joining the room. */
+export function mergePrejoinHighlightedTask(text, tasks) {
+  return [{text, completed:false}, ...(Array.isArray(tasks) ? tasks : []).filter(task => task.text !== text)];
+}
