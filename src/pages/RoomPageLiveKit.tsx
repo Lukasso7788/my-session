@@ -6317,6 +6317,8 @@ export function RoomPageLiveKit({
 
   // prejoin
   const [prejoinOpen, setPrejoinOpen] = useState(true);
+  const prejoinOpenRef = useRef(prejoinOpen);
+  prejoinOpenRef.current = prejoinOpen;
   const [joinRequested, setJoinRequested] = useState(false);
   useEffect(() => {
     if (prejoinOpen) captureProductEvent("prejoin_opened");
@@ -13310,6 +13312,8 @@ export function RoomPageLiveKit({
     };
 
     const markHidden = () => {
+      // Preview is not room membership: never manufacture a recovery lease.
+      if (prejoinOpenRef.current || (!joinRequestedRef.current && !connectedRef.current)) return;
       pageHiddenAtRef.current = Date.now();
       returningFromBackgroundRef.current = true;
       if (recentRoomEligibleSessions.has(sessionId)) {
@@ -13339,6 +13343,7 @@ export function RoomPageLiveKit({
     };
 
     const markVisible = () => {
+      if (prejoinOpenRef.current) return;
       if (!pageHiddenAtRef.current && !returningFromBackgroundRef.current)
         return;
 
@@ -17591,6 +17596,7 @@ export function RoomPageLiveKit({
   const restoreMobileMediaFromBackground = async (
     forceReconnectNow = false,
   ) => {
+    if (prejoinOpenRef.current) return;
     if (mobileMediaRestoreBusyRef.current) return;
     mobileMediaRestoreBusyRef.current = true;
 
@@ -17733,6 +17739,7 @@ export function RoomPageLiveKit({
     };
 
     const scheduleRecoveryRetry = () => {
+      if (prejoinOpenRef.current) return;
       if (mobileRecoveryRetryTimerRef.current) return;
       if (mobileAutoRestoreInFlightRef.current) return;
       if (!canRecoverRoomNow()) return;
@@ -17751,6 +17758,8 @@ export function RoomPageLiveKit({
     };
 
     const restoreFromLease = (resetBackoff = true) => {
+      // A stored lease must never dismiss an explicitly open prejoin dialog.
+      if (prejoinOpenRef.current) return;
       if (!canRecoverRoomNow()) return;
       // This tab opened prejoin because another tab is still in the room;
       // only the person's own Join connects it.
