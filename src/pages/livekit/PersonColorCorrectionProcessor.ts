@@ -152,11 +152,20 @@ class PersonBackgroundTransformer {
   private correction: PublishedColorCorrection;
   private background: BackgroundTransformer;
   private surface = new FrameColorCorrectionSurface();
+  // Android WebView shares segmentation and room UI on the renderer thread.
+  private readonly mobile = typeof navigator !== "undefined" && /Android/i.test(navigator.userAgent);
+  private lastProcessedAt = -Infinity;
+  private cachedFrame?: VideoFrame;
+  private backgroundCanvas?: OffscreenCanvas;
 
   constructor(options: PersonBackgroundOptions) {
     const { correction, ...backgroundOptions } = options;
     this.correction = normalizePublishedColorCorrection(correction);
-    this.background = new BackgroundTransformer(backgroundOptions);
+    this.background = new BackgroundTransformer({
+      ...backgroundOptions,
+      // Avoid mobile GPU contention between WebRTC, WebGL composition and inference.
+      ...(this.mobile ? { segmenterOptions: { delegate: "CPU" as const } } : {}),
+    });
   }
 
   async init(options: VideoTransformerInitOptions) {
@@ -167,11 +176,13 @@ class PersonBackgroundTransformer {
   }
 
   async restart(options: VideoTransformerInitOptions) {
+    this.clearMobileFrames();
     this.surface.reset();
     await this.background.restart(options);
   }
 
   async destroy(options?: TrackTransformerDestroyOptions) {
+    this.clearMobileFrames();
     this.surface.reset();
     await this.background.destroy(options);
     this.transformer = undefined;
@@ -188,7 +199,48 @@ class PersonBackgroundTransformer {
     }
   }
 
-  async transform(
+  private clearMobileFrames() {
+    this.cachedFrame?.close();
+    this.cachedFrame = undefined;
+    this.backgroundCanvas = undefined;
+    this.lastProcessedAt = -Infinity;
+  }
+
+  async transform(frame: VideoFrame, controller: TransformStreamDefaultController<VideoFrame>) {
+    if (!this.mobile) return this.transformBackground(frame, controller);
+    const now = performance.now();
+    if (this.cachedFrame && now - this.lastProcessedAt < 150) {
+      // Preserve the composed picture between inference frames, never leak raw camera.
+      controller.enqueue(new VideoFrame(this.cachedFrame, { timestamp: frame.timestamp }));
+      frame.close();
+      return;
+    }
+    // Yield to touch/layout before doing bounded-resolution synchronous inference.
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    const scale = Math.min(1, 480 / Math.max(frame.displayWidth, frame.displayHeight));
+    const width = Math.max(1, Math.round(frame.displayWidth * scale));
+    const height = Math.max(1, Math.round(frame.displayHeight * scale));
+    this.backgroundCanvas ??= new OffscreenCanvas(width, height);
+    if (this.backgroundCanvas.width !== width) this.backgroundCanvas.width = width;
+    if (this.backgroundCanvas.height !== height) this.backgroundCanvas.height = height;
+    const ctx = this.backgroundCanvas.getContext("2d");
+    if (!ctx) { frame.close(); throw new Error("Background canvas unavailable"); }
+    ctx.drawImage(frame, 0, 0, width, height);
+    const reduced = new VideoFrame(this.backgroundCanvas, { timestamp: frame.timestamp });
+    frame.close();
+    const cachingController = {
+      enqueue: (output: VideoFrame) => {
+        this.cachedFrame?.close();
+        this.cachedFrame = output.clone();
+        controller.enqueue(output);
+      },
+    } as TransformStreamDefaultController<VideoFrame>;
+    await this.transformBackground(reduced, cachingController);
+    // Measure from completion, so expensive frames always leave UI breathing room.
+    this.lastProcessedAt = performance.now();
+  }
+
+  private async transformBackground(
     frame: VideoFrame,
     controller: TransformStreamDefaultController<VideoFrame>,
   ) {
