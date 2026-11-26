@@ -21,7 +21,7 @@ test('Android background bounds inference, reuses composed frames and releases c
   }
   class Wrapper { constructor(transformer) { this.transformer = transformer; } }
   const exports = {};
-  const context = { exports, require: (name) => name === '@livekit/track-processors'
+  const context = { exports, require: (name) => name.includes('AndroidCanvasBackgroundTransformer') ? { AndroidCanvasBackgroundTransformer: Background } : name === '@livekit/track-processors'
     ? { BackgroundTransformer: Background, ProcessorWrapper: Wrapper }
     : { normalizePublishedColorCorrection: x => x, isPublishedColorCorrectionIdentity: () => true },
     navigator: { userAgent: 'Android; wv' }, performance: { now: () => clock }, setTimeout,
@@ -33,7 +33,7 @@ test('Android background bounds inference, reuses composed frames and releases c
   const sink = { enqueue: frame => output.push(frame) };
   const input = new Frame({width:1920,height:1080});
   await transformer.transform(input,sink);
-  assert.equal(options.segmenterOptions?.delegate,undefined, 'keep LiveKit GPU default for WebGL texture masks');
+  assert.equal(options.imagePath,'image');
   assert.equal(output[0].displayWidth,480);
   assert.equal(input.closed,true);
   clock += 50;
@@ -53,3 +53,4 @@ test('Android background bounds inference, reuses composed frames and releases c
   await transformer.destroy();
   assert.equal(cache.closed,true);
 });
+

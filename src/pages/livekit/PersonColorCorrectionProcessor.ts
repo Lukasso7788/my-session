@@ -1,3 +1,4 @@
+import { AndroidCanvasBackgroundTransformer } from "./AndroidCanvasBackgroundTransformer";
 import {
   BackgroundTransformer,
   ProcessorWrapper,
@@ -150,7 +151,7 @@ class ColorCorrectionTransformer {
 class PersonBackgroundTransformer {
   transformer?: TransformStream<VideoFrame, VideoFrame>;
   private correction: PublishedColorCorrection;
-  private background: BackgroundTransformer;
+  private background: BackgroundTransformer | AndroidCanvasBackgroundTransformer;
   private surface = new FrameColorCorrectionSurface();
   // Android WebView shares segmentation and room UI on the renderer thread.
   private readonly mobile = typeof navigator !== "undefined" && /Android/i.test(navigator.userAgent);
@@ -161,9 +162,9 @@ class PersonBackgroundTransformer {
   constructor(options: PersonBackgroundOptions) {
     const { correction, ...backgroundOptions } = options;
     this.correction = normalizePublishedColorCorrection(correction);
-    // LiveKit composites MPMask.getAsWebGLTexture(); keep its GPU delegate.
-    // CPU masks are incompatible with that renderer. Bound work below instead.
-    this.background = new BackgroundTransformer(backgroundOptions);
+    this.background = this.mobile
+      ? new AndroidCanvasBackgroundTransformer(backgroundOptions)
+      : new BackgroundTransformer(backgroundOptions);
   }
 
   async init(options: VideoTransformerInitOptions) {
