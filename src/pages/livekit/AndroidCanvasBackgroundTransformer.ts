@@ -10,7 +10,18 @@ export class AndroidCanvasBackgroundTransformer {
   private output?: OffscreenCanvas;
   private person?: OffscreenCanvas;
   private mask?: OffscreenCanvas;
-  private nextMaskAt = 0;
+  private lastMaskAt = -Infinity;
+  private lastMaskCost = 0;
+  private motionCanvas?: OffscreenCanvas;
+  private maskReference?: Uint8ClampedArray;
+
+  private sampleMotion(frame: VideoFrame) {
+    this.motionCanvas ??= new OffscreenCanvas(16, 12);
+    const context = this.motionCanvas.getContext('2d', { willReadFrequently: true });
+    if (!context) return undefined;
+    context.drawImage(frame, 0, 0, 16, 12);
+    return context.getImageData(0, 0, 16, 12).data;
+  }
   private maskPixels?: ImageData;
   constructor(options: BackgroundOptions) { this.options = options; }
 
@@ -26,7 +37,10 @@ export class AndroidCanvasBackgroundTransformer {
   async restart(options: VideoTransformerInitOptions) { await this.destroy(); await this.init(options); }
   async destroy(_options?: TrackTransformerDestroyOptions) {
     this.segmenter?.close(); this.segmenter = undefined;
-    this.nextMaskAt = 0;
+    this.lastMaskAt = -Infinity;
+    this.lastMaskCost = 0;
+    this.motionCanvas = undefined;
+    this.maskReference = undefined;
     this.maskPixels = undefined;
     this.output = this.person = this.mask = undefined;
     this.image = undefined; this.imagePath = undefined;
@@ -53,8 +67,20 @@ export class AndroidCanvasBackgroundTransformer {
     const person = this.person.getContext('2d')!;
     try {
       // Read CPU bytes directly. Never convert masks to unsupported GPU float textures.
-      if (!this.mask || performance.now() >= this.nextMaskAt) {
-        this.segmenter.segmentForVideo(frame, performance.now(), result => {
+      const startedAt = performance.now();
+      const elapsed = startedAt - this.lastMaskAt;
+      // Give rendering time between inferences, even on slow devices.
+      const minimumGap = Math.max(45, this.lastMaskCost * 2);
+      const sample = elapsed >= minimumGap ? this.sampleMotion(frame) : undefined;
+      let motion = 0;
+      if (sample && this.maskReference) {
+        for (let i = 0; i < sample.length; i += 4) {
+          motion += Math.abs(sample[i + 1] - this.maskReference[i + 1]);
+        }
+        motion /= sample.length / 4;
+      }
+      if (!this.mask || (elapsed >= minimumGap && (elapsed >= 150 || motion >= 5))) {
+        this.segmenter.segmentForVideo(frame, startedAt, result => {
           try {
             const category = result.categoryMask;
             if (!category) throw new Error('Person segmentation mask unavailable');
@@ -72,7 +98,9 @@ export class AndroidCanvasBackgroundTransformer {
             this.mask.getContext('2d')!.putImageData(this.maskPixels,0,0);
           } finally { result.close(); }
         });
-        this.nextMaskAt = performance.now() + 150;
+        this.lastMaskAt = performance.now();
+        this.lastMaskCost = this.lastMaskAt - startedAt;
+        this.maskReference = sample;
       }
       if (!this.mask) throw new Error('Person segmentation mask unavailable');
       person.clearRect(0,0,width,height);
