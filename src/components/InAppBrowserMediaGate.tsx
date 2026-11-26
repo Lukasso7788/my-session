@@ -18,6 +18,16 @@ function isMobileOrTablet(ua: string) {
 function detectEmbeddedBrowser(): EmbeddedBrowser | null {
   if (typeof navigator === "undefined") return null;
 
+  // AndroidX injects this bridge at document start only for our allowed origins.
+  // This is a media UX exemption, never an authentication or billing signal.
+  const nativeBridge = typeof window !== "undefined"
+    ? (window as Window & { MySessionNative?: { postMessage?: unknown } }).MySessionNative
+    : undefined;
+  const nativeOrigin = typeof location !== "undefined" && location.protocol === "https:" &&
+    ["mysession.club", "www.mysession.club"].includes(location.hostname);
+  if (nativeOrigin && typeof nativeBridge?.postMessage === "function") return null;
+
+
   const ua = String(navigator.userAgent || "");
   if (!isMobileOrTablet(ua)) return null;
 
