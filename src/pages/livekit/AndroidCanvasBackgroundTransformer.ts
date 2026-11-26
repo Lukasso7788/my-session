@@ -60,7 +60,7 @@ export class AndroidCanvasBackgroundTransformer {
           const pixels = new Uint8ClampedArray(bytes.length * 4);
           for (let i=0;i<bytes.length;i++) {
             pixels[i*4] = pixels[i*4+1] = pixels[i*4+2] = 255;
-            pixels[i*4+3] = bytes[i] > 0 ? 255 : 0;
+            pixels[i*4+3] = bytes[i] === 0 ? 255 : 0;
           }
           this.mask.getContext('2d')!.putImageData(new ImageData(pixels,category.width,category.height),0,0);
           person.clearRect(0,0,width,height);
@@ -85,3 +85,4 @@ export class AndroidCanvasBackgroundTransformer {
     } finally { frame.close(); }
   }
 }
+
