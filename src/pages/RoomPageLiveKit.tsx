@@ -22023,6 +22023,8 @@ export function RoomPageLiveKit({
       />
 
       <PreJoinModal
+        cameraMirrored={previewMirrored}
+        onCameraMirroredChange={setPreviewMirrored}
         tilePreview={{theme,avatarUrl:localAvatarUrl || undefined,timeZone:prejoinZoneDraft || localProfileTimeZone || Intl.DateTimeFormat().resolvedOptions().timeZone,task:prejoinTaskDraft,onTimeZoneChange:setPrejoinZoneDraft,onTaskChange:setPrejoinTaskDraft}}
         open={prejoinOpen && !!authUserId && !activeBan}
         theme={theme}

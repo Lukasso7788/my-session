@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { LocalVideoTrack } from "livekit-client";
 import { Check, ChevronUp, SlidersHorizontal, X } from "lucide-react";
-import { PreJoinDeviceSelect, PreJoinDisclosure } from "./PreJoinMenus";
+import { PreJoinDeviceList, PreJoinDisclosure } from "./PreJoinMenus";
 import "./prejoin-compact.css";
 import { VideoTile } from "./VideoTileLiveKitLegacy";
 import TimeZonePicker from "../../components/TimeZonePicker";
@@ -53,6 +53,8 @@ function BackgroundChoiceIcon({ choice }: { choice: BackgroundChoice }) {
 }
 
 type PreJoinModalProps = {
+  cameraMirrored?: boolean;
+  onCameraMirroredChange?: (enabled: boolean) => void;
   tilePreview?: { theme?: RoomTheme; avatarUrl?: string; timeZone: string; task: string; onTimeZoneChange: (zone: string) => void; onTaskChange: (task: string) => void };
   open: boolean;
   theme: RoomTheme;
@@ -109,6 +111,8 @@ function PreJoinMediaIcon({
 }
 
 export function PreJoinModal({
+  cameraMirrored = true,
+  onCameraMirroredChange,
   tilePreview,
   open,
   theme: _roomTheme,
@@ -273,7 +277,7 @@ export function PreJoinModal({
     }
 
     return cleanup;
-  }, [open, value.videoEnabled, previewVideoTrack, previewVersion]);
+  }, [open, value.videoEnabled, previewVideoTrack, previewVersion, cameraMirrored]);
 
   useEffect(() => {
     const el = attachedPreviewElRef.current;
@@ -475,7 +479,7 @@ export function PreJoinModal({
               <VideoTile tileId="prejoin-self" label={value.displayName || "You"} isLocal theme={tilePreview.theme || _roomTheme}
                 videoTrack={value.videoEnabled ? previewVideoTrack || undefined : undefined} avatarUrl={tilePreview.avatarUrl}
                 micMuted={!value.audioEnabled} participantTimeZone={tilePreview.timeZone} taskList={tilePreview.task.trim() ? [tilePreview.task.trim()] : []}
-                showTaskOverlay showBottomShade showMenuButton={false} mirrorVideo onEditName={() => document.getElementById('prejoin-profile-name')?.focus()}/>
+                showTaskOverlay showBottomShade showMenuButton={false} mirrorVideo={cameraMirrored} onEditName={() => document.getElementById('prejoin-profile-name')?.focus()}/>
             </div>
           </> : <>
           <div className="w-full overflow-hidden">
@@ -528,29 +532,33 @@ export function PreJoinModal({
               </button>
               <button type="button" className="ms-prejoin-compact-chevron" aria-label="Choose camera" aria-expanded={compactMenu === 'camera'} onClick={() => { if(compactMenu !== 'camera') onRefreshDevices(); setCompactMenu(compactMenu === 'camera' ? null : 'camera'); }}><ChevronUp size={10} strokeWidth={2.4}/></button>
             </div>
-            <button type="button" className="ms-prejoin-processing-button" aria-label="Audio processing" aria-controls="prejoin-audio-processing" title="Audio processing" aria-expanded={compactMenu === 'processing'} onClick={() => setCompactMenu(compactMenu === 'processing' ? null : 'processing')}><SlidersHorizontal size={20}/></button>
-            {compactMenu && <div className={`ms-prejoin-compact-menu ms-prejoin-compact-menu--${compactMenu}`} role="group" aria-label={compactMenu === "mic" ? "Audio settings" : compactMenu === "camera" ? "Camera settings" : "Audio processing"}>
-              <div className="ms-prejoin-compact-menu-title"><strong>{compactMenu === "mic" ? "Audio settings" : compactMenu === "camera" ? "Camera settings" : "Audio processing"}</strong><button type="button" onClick={()=>setCompactMenu(null)} aria-label="Close settings menu"><X size={15}/></button></div>
+            <button type="button" className="ms-prejoin-processing-button" aria-label="Audio & video settings" aria-controls="prejoin-audio-processing" title="Audio & video settings" aria-expanded={compactMenu === 'processing'} onClick={() => setCompactMenu(compactMenu === 'processing' ? null : 'processing')}><SlidersHorizontal size={20}/></button>
+            {compactMenu && <div className={`ms-prejoin-compact-menu ms-prejoin-compact-menu--${compactMenu}`} role="group" aria-label={compactMenu === "mic" ? "Audio settings" : compactMenu === "camera" ? "Camera settings" : "Audio & video settings"}>
+              <div className="ms-prejoin-compact-menu-title"><strong>{compactMenu === "mic" ? "Audio settings" : compactMenu === "camera" ? "Camera settings" : "Audio & video settings"}</strong><button type="button" onClick={()=>setCompactMenu(null)} aria-label="Close settings menu"><X size={15}/></button></div>
               {compactMenu === 'mic' && <div className="ms-prejoin-compact-menu-fields">
                 <label htmlFor="prejoin-microphone">Microphone</label>
-                  <PreJoinDeviceSelect id="prejoin-microphone" label="Microphone" theme={theme} value={value.audioInputId}
+                  <PreJoinDeviceList id="prejoin-microphone" label="Microphone" value={value.audioInputId}
                     onChange={(audioInputId) => onChange({ ...value, audioInputId })}
                     options={[{ value: "", label: "Default" }, ...devices.audioInputs.map((d, i) => ({ value: d.deviceId, label: deviceLabel(d, `Microphone ${i + 1}`) }))]} />
                 <label htmlFor="prejoin-speaker">Speaker</label>
-                  <PreJoinDeviceSelect id="prejoin-speaker" label="Speaker" theme={theme} value={value.audioOutputId}
+                  <PreJoinDeviceList id="prejoin-speaker" label="Speaker" value={value.audioOutputId}
                     onChange={(audioOutputId) => onChange({ ...value, audioOutputId })}
                     options={[{ value: "default", label: "Default" }, ...devices.audioOutputs.map((d, i) => ({ value: d.deviceId, label: deviceLabel(d, `Speaker ${i + 1}`) }))]} />
                 <div className="flex gap-2"><button type="button" className={`rounded-xl px-3 py-2 text-xs ${btnGhost}`} onClick={handleTestSpeaker}>Test sound</button><button type="button" className={`rounded-xl px-3 py-2 text-xs ${btnGhost}`} onClick={onRefreshDevices}>Refresh devices</button></div>
               </div>}
               {compactMenu === 'camera' && <div className="ms-prejoin-compact-menu-fields"><label htmlFor="prejoin-camera">Camera</label>
-                  <PreJoinDeviceSelect id="prejoin-camera" label="Camera" theme={theme} value={value.videoInputId}
+                  <PreJoinDeviceList id="prejoin-camera" label="Camera" value={value.videoInputId}
                     onChange={(videoInputId) => onChange({ ...value, videoInputId })}
                     options={[{ value: "", label: "Default" }, ...devices.videoInputs.map((d, i) => ({ value: d.deviceId, label: deviceLabel(d, `Camera ${i + 1}`) }))]} />
                 <button type="button" className={`rounded-xl px-3 py-2 text-xs ${btnGhost}`} onClick={onRefreshDevices}>Refresh devices</button>
                 <p className={`text-[11px] leading-4 ${labelCls}`}>Device names appear after browser permission is granted.</p>
               </div>}
-              {compactMenu === 'processing' && <>                <div id="prejoin-audio-processing">
-                <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+              {compactMenu === 'processing' && <>
+                <h3 className="text-xs font-semibold">Video</h3>
+                {onCameraMirroredChange && <label className="ms-prejoin-mirror-setting"><input type="checkbox" checked={cameraMirrored} onChange={e=>onCameraMirroredChange(e.target.checked)}/><span>Mirror camera</span></label>}
+                <div id="prejoin-audio-processing">
+                <h3 className="mt-4 text-xs font-semibold">Audio processing</h3>
+                <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <label className="flex items-center gap-2 text-[12px]">
                     <input className="accent-[#5286F6]" type="checkbox" checked={value.echoCancellation} onChange={(e) => onChange({ ...value, echoCancellation: e.target.checked })} />
                     <span>Echo cancellation</span>

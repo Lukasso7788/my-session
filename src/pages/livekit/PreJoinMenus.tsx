@@ -121,3 +121,13 @@ export function PreJoinDisclosure({ open, children, id }: { open: boolean; child
     <div ref={contentRef} className="ms-prejoin-disclosure-content">{children}</div>
   </div>;
 }
+
+/** Flat device choices for an already open microphone/camera popover. */
+export function PreJoinDeviceList({id,label,value,options,onChange}: {id:string;label:string;value:string;options:Array<{value:string;label:string}>;onChange:(value:string)=>void}) {
+  const choices = options.length ? options : [{value:"",label:"Default"}];
+  return <div id={id} role="group" aria-label={label} className="ms-prejoin-device-list">
+    {choices.map(option=><button key={option.value} type="button" aria-pressed={option.value===value} onClick={()=>onChange(option.value)}>
+      <span>{option.label}</span><span aria-hidden="true">{option.value===value ? "✓" : ""}</span>
+    </button>)}
+  </div>;
+}

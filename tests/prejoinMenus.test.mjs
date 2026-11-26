@@ -12,7 +12,7 @@ const menuSource = readFileSync("src/pages/livekit/PreJoinMenus.tsx", "utf8");
 const bundled = await build({ stdin: { contents: menuSource.replace('import "./prejoin-menus.css";', ""), loader: "tsx", resolveDir: process.cwd() }, bundle: true, packages: "external", platform: "node", format: "cjs", jsx: "automatic", write: false, logLevel: "silent" });
 const compiled = { exports: {} };
 new Function("require", "module", "exports", bundled.outputFiles[0].text)(createRequire(import.meta.url), compiled, compiled.exports);
-const { PreJoinDeviceSelect, PreJoinDisclosure } = compiled.exports;
+const { PreJoinDeviceSelect, PreJoinDeviceList, PreJoinDisclosure } = compiled.exports;
 const modal = readFileSync("src/pages/livekit/PreJoinModalLiveKit.tsx", "utf8");
 const css = readFileSync("src/pages/livekit/prejoin-menus.css", "utf8");
 
@@ -43,8 +43,13 @@ test("arrows have 16px inset and menus/disclosures animate with reduced-motion o
 });
 test("all three device selectors preserve parent state update contracts; Escape respects consumed events", () => {
   for (const field of ["audioInputId", "videoInputId", "audioOutputId"]) assert.ok(modal.includes(`onChange={(${field}) => onChange({ ...value, ${field} })}`));
-  assert.equal((modal.match(/<PreJoinDeviceSelect /g) || []).length, 3);
+  assert.equal((modal.match(/<PreJoinDeviceList /g) || []).length, 3);
   assert.match(modal, /e.key === "Escape" && !e.defaultPrevented/);
   assert.match(modal, /aria-controls="prejoin-audio-processing"/);
   assert.match(modal, /renderedBackgroundChoice === "custom"/);
+});
+
+test("flat device list exposes choices immediately without a nested combobox",()=>{
+ const html=renderToStaticMarkup(createElement(PreJoinDeviceList,{id:'camera',label:'Camera',value:'obs',options:[{value:'obs',label:'OBS Virtual Camera'},{value:'webcam',label:'Integrated camera'}],onChange:()=>{}}));
+ assert.match(html,/OBS Virtual Camera/);assert.match(html,/Integrated camera/);assert.match(html,/aria-pressed="true"/);assert.doesNotMatch(html,/combobox/);
 });
