@@ -9,7 +9,9 @@
     status.textContent = "Sign-in did not complete. Return to the desktop app and try again.";
     return;
   }
-  const target = new URL("mysession://oauth/callback");
+  const android = params.get("platform") === "android";
+  const target = new URL(android ? "mysession-android://oauth/callback" : "mysession://oauth/callback");
+  if (android) { document.title = "Return to MySession Android"; document.querySelector("h1").textContent = "MySession Android"; }
   target.searchParams.set("state", state);
   target.searchParams.set("code", code);
   const link = document.getElementById("return");
