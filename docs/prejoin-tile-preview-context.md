@@ -1,0 +1,30 @@
+# MySession prejoin — actual room tile, 2026-11-26
+
+## Workspace and scope
+C:/projects/mysession-prejoin-tile, branch codex/prejoin-tile-preview, independent clean clone based on GitHub main 57bf5de0. Previous prejoin-local worktree has broken refs and was left untouched, along with original music worktree. No push, commit, deployment, migration or production database writes in this iteration. Local preview http://127.0.0.1:4271/tests/browser/prejoin-compact.html, Vite npm run dev -- --host 127.0.0.1 --port 4271. Dependencies junction points to C:/projects/mysession-desktop-hosted/node_modules.
+
+## Project architecture
+React/TypeScript/Vite frontend. Supabase authenticated browser client (src/lib/supabase.ts) owns data operations under existing RLS, LiveKit media rooms and participant metadata, server APIs for billing/token/admin and other operations. RoomPageLiveKit orchestrates authentication, room capture/join, profiles, tasks and PiP. TasksPanel persists panel tasks in panel_intentions, personal order in sort_order plus localStorage mysession_task_order_v1:<user>, pin list mysession_task_pinned_v1:<user>. Public task changes propagate to local tile/LiveKit metadata and session tasks through existing callbacks. Earlier broad context docs/my-session-project-context.md and docs/prejoin-compact-local-context.md retained from main.
+
+## Current implementation
+PreJoinModalLiveKit renders the real VideoTile from VideoTileLiveKitLegacy when tilePreview prop supplied. Exact camera-on and camera-off states, avatar/initials, task overlay, participant timezone/time, mic badge and gradients come from that actual component, not a custom imitation. Modal stays white; room tile uses room theme. Existing track capture remains owned by RoomPage; actual VideoTile attaches/detaches preview track in this branch. Legacy preview branch retained for callers without tilePreview. Name, timezone and task edit controls below tile. Existing TimeZonePicker searchable city/country/GMT component replaces native select. Original device/background/audio controls preserved.
+
+RoomPage provides controlled draft task/timezone and avatar, resetting draft/id on authUserId changes. onJoinGate remains policy/paywall/tab gated and now awaits saving setup before starting media join. Existing profile timezone updated only when changed, own id only; metadata synchronization uses existing localProfileTimeZone state/ref. Non-empty task upserted into panel_intentions as public/incomplete with stable draft UUID (retry does not duplicate), sort_order one below existing minimum. Reads/writes use authenticated client and user filters; no service keys. Returned order saved to existing order storage, new task prepended to pinned ids, existing task-order and room-task sync events emitted, handlePublicPanelTasksChange invoked with task first for highlighted tile. Failure preserves open modal/draft with retry error, resets join flow flags. Duplicate Join guarded with in-flight ref. Blank draft creates nothing. Cancel never writes.
+
+src/lib/prejoinTask.mjs contains tested persistence routine and prejoinTask.d.mts its TS declaration. Existing tasks/schema reused; no schema change. Saving task and timezone are sequential non-transactional operations: timezone may save if subsequent task write fails; retry safe via stable id. Cross-device simultaneous additions remain ordered by existing app reorder behavior, no new transaction added. Need real authenticated staging test before release to verify RLS, profile updates, initial panel hydration/pin snapshot, metadata and session sync end-to-end. Tests do not prove production saves.
+
+## Local fixture
+Actual modal+tile, synthetic media devices and existing study photo mock track. HTML installs existing demo-client hook with empty in-memory Supabase object so imported profile-location module does not construct live client; no participantUserId passed => no profile fetch. Fixture Join only dismisses preview, no actual data save or LiveKit connection. Demonstrates name/task/timezone editing and both camera states; real RoomPage persistence code is separate and not executed by fixture.
+
+## Verification
+8/8 tests: prejoinMenus and prejoinTask. Persistence tests cover trimmed text, public/incomplete state, position above existing tasks, stable-id retries, empty input, read/write errors. Browser verified real tile Camera on/off, task/name layout and TimeZonePicker search for London and selection updating tile clock. Vite build passed. tsc project remains failing on existing project errors; latest output contains no errors in modified PreJoinModal or prejoinTask module (a separate legacy updated-chat component still has an old missing import). No clean full-project typecheck claimed. git diff --check passed. No real camera/mic or production data access.
+
+Visual follow-up: Join room enlarged to minimum 44px height/118px width, 14px label. Name, timezone and task inputs aligned at 46px with soft #DFE5ED borders/#F8FAFC fill and 12px rounding. TimeZonePicker now accepts optional icon search|globe, default search preserves existing callers; prejoin requests globe. Search behavior unchanged. Browser screenshot verified. Still local only.
+
+Cancel sizing follow-up: min-height 44px matching Join room, min-width 90px, 18px horizontal padding, 12px radius and 14px label. Local only.
+
+Latest button sizing: both header actions reduced to 38px height, 13px text, 15px horizontal padding and 10px radius. Join min-width 102px, Cancel 76px. Local only.
+
+Layout follow-up: moved profile editor below the microphone/camera/audio control row, so media controls sit immediately under actual preview tile. Both header actions now 38px as requested. Local only.
+
+Publication approved by user. Final build passed (11.76s), 8/8 focused tests passed, diff check passed; origin/main still 57bf5de0 before publication. Committing exact changed paths and pushing to main. Full-project tsc remains failing on existing errors; production save/join still needs authenticated verification.

@@ -1,5 +1,5 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
-import { Search } from "lucide-react";
+import { Search, Globe2 } from "lucide-react";
 import { getBrowserTimeZone } from "../lib/timezones";
 import {
   buildTimeZoneOptions,
@@ -15,6 +15,7 @@ type Props = {
   autoFocus?: boolean;
   id?: string;
   className?: string;
+  icon?: "search" | "globe";
 };
 
 export default function TimeZonePicker({
@@ -24,7 +25,9 @@ export default function TimeZonePicker({
   autoFocus = false,
   id,
   className = "",
+  icon = "search",
 }: Props) {
+  const LeadingIcon = icon === "globe" ? Globe2 : Search;
   const generatedId = useId();
   const inputId = id || `timezone-${generatedId}`;
   const listId = `${inputId}-options`;
@@ -83,7 +86,7 @@ export default function TimeZonePicker({
       }}
     >
       <div className="relative">
-        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-black/45" aria-hidden="true" />
+        <LeadingIcon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-black/45" aria-hidden="true" />
         <input
           id={inputId}
           type="search"

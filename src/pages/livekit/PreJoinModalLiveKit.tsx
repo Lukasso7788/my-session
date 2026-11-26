@@ -1,8 +1,10 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { LocalVideoTrack } from "livekit-client";
 import { Check, ChevronUp, SlidersHorizontal, X } from "lucide-react";
 import { PreJoinDeviceSelect, PreJoinDisclosure } from "./PreJoinMenus";
 import "./prejoin-compact.css";
+import { VideoTile } from "./VideoTileLiveKitLegacy";
+import TimeZonePicker from "../../components/TimeZonePicker";
 import { Icon } from "./LiveKitUI";
 
 type RoomTheme = "dark" | "light";
@@ -51,6 +53,7 @@ function BackgroundChoiceIcon({ choice }: { choice: BackgroundChoice }) {
 }
 
 type PreJoinModalProps = {
+  tilePreview?: { theme?: RoomTheme; avatarUrl?: string; timeZone: string; task: string; onTimeZoneChange: (zone: string) => void; onTaskChange: (task: string) => void };
   open: boolean;
   theme: RoomTheme;
   devices: MediaDevicesResult;
@@ -106,6 +109,7 @@ function PreJoinMediaIcon({
 }
 
 export function PreJoinModal({
+  tilePreview,
   open,
   theme: _roomTheme,
   devices,
@@ -332,7 +336,6 @@ export function PreJoinModal({
   const border = isLight ? "border-[#D8D0D0]" : "border-[#343434]";
   const labelCls = isLight ? "text-[#686868]" : "text-[#B8B8B8]";
   const inputWrap = isLight ? "border border-[#D8D0D0] bg-white shadow-sm" : "border border-[#343434] bg-[#242424]";
-  const inputCls = isLight ? "text-[#20242D] placeholder:text-[#909090]" : "text-white placeholder:text-white/40";
   const btnGhost = isLight ? "border border-[#D8D0D0] bg-white text-[#2F2F2F] hover:border-[#A9C4FC] hover:bg-[#F3F1F1]" : "border border-[#343434] bg-[#242424] text-white/85 hover:border-[#5286F6]/45 hover:bg-[#2F2F2F]";
   const btnPrimary = "bg-[#5286F6] text-white shadow-[0_12px_30px_rgba(82,134,246,0.25)] hover:bg-[#3E75ED] hover:shadow-[0_14px_34px_rgba(82,134,246,0.34)]";
   const mediaToggleBase = "inline-flex h-10 min-w-0 flex-1 items-center justify-center gap-2.5 rounded-2xl border px-3 text-[13px] font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#5286F6]";
@@ -467,6 +470,14 @@ export function PreJoinModal({
         </div>
 
         <div className="custom-scrollbar ms-prejoin-daily-body min-h-0 flex-1 overflow-y-auto overscroll-contain">
+          {tilePreview ? <>
+            <div className="ms-prejoin-real-tile relative aspect-video w-full overflow-hidden">
+              <VideoTile tileId="prejoin-self" label={value.displayName || "You"} isLocal theme={tilePreview.theme || _roomTheme}
+                videoTrack={value.videoEnabled ? previewVideoTrack || undefined : undefined} avatarUrl={tilePreview.avatarUrl}
+                micMuted={!value.audioEnabled} participantTimeZone={tilePreview.timeZone} taskList={tilePreview.task.trim() ? [tilePreview.task.trim()] : []}
+                showTaskOverlay showBottomShade showMenuButton={false} mirrorVideo onEditName={() => document.getElementById('prejoin-profile-name')?.focus()}/>
+            </div>
+          </> : <>
           <div className="w-full overflow-hidden">
                 <div className="relative aspect-video w-full overflow-hidden bg-[#1B1B1B]">
                   <div className="pointer-events-none absolute left-4 top-4 z-10 flex items-center gap-2 rounded-full border border-white/15 bg-[#1B1B1B]/75 px-3 py-1.5 text-[11px] font-semibold text-white backdrop-blur-sm">
@@ -484,13 +495,7 @@ export function PreJoinModal({
                             : "Clean"
                       : "Off"}
                   </div>
-                  <label className="ms-prejoin-daily-name">
-                    <span className="sr-only">Display name</span>
-                    <span className="ms-prejoin-name-sizer" aria-hidden="true">{value.displayName || "Your name"}</span>
-                    <img className="ms-prejoin-name-edit" src="/icons/edit_profile_hover.svg" alt="" aria-hidden="true" />
-                    <input id="prejoin-display-name" aria-label="Display name" value={value.displayName}
-                      onChange={(e) => onChange({ ...value, displayName: e.target.value })} placeholder="Your name" />
-                  </label>
+                  <label className="ms-prejoin-daily-name"><span className="sr-only">Display name</span><span className="ms-prejoin-name-sizer" aria-hidden="true">{value.displayName || "Your name"}</span><input aria-label="Display name" value={value.displayName} onChange={e=>onChange({...value,displayName:e.target.value})}/></label>
                   {value.videoEnabled ? (
                     <>
                       <div ref={previewHostRef} className="absolute inset-0 h-full w-full" />
@@ -509,6 +514,7 @@ export function PreJoinModal({
                   )}
                 </div>
           </div>
+          </>}
           <div className="ms-prejoin-compact-controls" ref={compactControlsRef}>
             <div className="ms-prejoin-compact-split">
               <button type="button" aria-label={value.audioEnabled ? "Turn microphone off" : "Turn microphone on"} title={value.audioEnabled ? "Turn microphone off" : "Turn microphone on"} aria-pressed={value.audioEnabled} onClick={() => onChange({ ...value, audioEnabled: !value.audioEnabled })} className={`${mediaToggleBase} ${value.audioEnabled ? mediaToggleOn : mediaToggleOff}`}>
@@ -562,6 +568,13 @@ export function PreJoinModal({
                 </div></>}
             </div>}
           </div>
+          {tilePreview && <>
+            <div className="ms-prejoin-profile-editor">
+              <label><span>Name</span><input id="prejoin-profile-name" aria-label="Display name" value={value.displayName} onChange={e=>onChange({...value,displayName:e.target.value})}/></label>
+              <div><label htmlFor="prejoin-timezone">Time zone</label><TimeZonePicker icon="globe" id="prejoin-timezone" value={tilePreview.timeZone} onChange={tilePreview.onTimeZoneChange}/></div>
+              <label className="ms-prejoin-profile-task"><span>Highlighted task</span><input aria-label="Highlighted task" placeholder="What are you working on?" value={tilePreview.task} onChange={e=>tilePreview.onTaskChange(e.target.value)}/><small>Saved at the top of your Tasks panel when you join.</small></label>
+            </div>
+          </>}
               {!hideBackgroundFx && <div id="prejoin-background-panel" className="ms-prejoin-compact-background mt-4">
                 <h3 className="mb-2 text-[12px] font-semibold">BG effects</h3>
                 <div className="ms-prejoin-effect-switcher" role="group" aria-label="Background effect choices">

@@ -142,6 +142,7 @@ import {
   type RoomTheme,
 } from "./livekit/LiveKitUI";
 
+import { savePrejoinTask } from "../lib/prejoinTask.mjs";
 import { PreJoinModal } from "./livekit/PreJoinModalLiveKit";
 import { VideoTile } from "./livekit/VideoTileLiveKit";
 import { RoomStatusMenu } from "./livekit/RoomStatusMenu";
@@ -6298,6 +6299,11 @@ export function RoomPageLiveKit({
     {},
   );
   const profilesByIdRef = useRef<Record<string, HostProfile>>({});
+  const [prejoinTaskDraft, setPrejoinTaskDraft] = useState("");
+  const [prejoinZoneDraft, setPrejoinZoneDraft] = useState("");
+  const prejoinTaskIdRef = useRef<string | null>(null);
+  const prejoinSaveBusyRef = useRef(false);
+  useEffect(() => { setPrejoinTaskDraft(""); setPrejoinZoneDraft(""); prejoinTaskIdRef.current = null; }, [authUserId]);
   const [localProfileTimeZone, setLocalProfileTimeZone] = useState("");
   const localProfileTimeZoneRef = useRef("");
 
@@ -21798,7 +21804,8 @@ export function RoomPageLiveKit({
     );
   }
 
-  const onJoinGate = () => {
+  const onJoinGate = async () => {
+    if (prejoinSaveBusyRef.current) return;
     captureProductEvent("prejoin_opened", { action: "join_confirmed" });
     if (sessionCloseInfo.closed) {
       setPrejoinOpen(false);
@@ -21869,6 +21876,38 @@ export function RoomPageLiveKit({
         return;
       }
     }
+
+    prejoinSaveBusyRef.current = true;
+    try {
+      const zone = prejoinZoneDraft || localProfileTimeZone;
+      if (zone && zone !== localProfileTimeZone && isValidTimeZone(zone)) {
+        const { data, error } = await supabase.from("profiles").update({ timezone: zone }).eq("id", authUserId).select("id").single();
+        if (error || !data) throw error || new Error("Time zone was not saved");
+        setLocalProfileTimeZone(zone);
+        localProfileTimeZoneRef.current = zone;
+        try { localStorage.setItem(`mysession-timezone:${authUserId}`,zone); } catch { }
+      }
+      if (prejoinTaskDraft.trim()) {
+        prejoinTaskIdRef.current ||= crypto.randomUUID();
+        const saved = await savePrejoinTask(supabase, {userId:authUserId,taskId:prejoinTaskIdRef.current,text:prejoinTaskDraft});
+        if (saved) {
+          try {
+            localStorage.setItem(`mysession_task_order_v1:${authUserId}`,JSON.stringify(saved.order));
+            const pinnedKey = `mysession_task_pinned_v1:${authUserId}`;
+            const pinned = JSON.parse(localStorage.getItem(pinnedKey) || "[]");
+            localStorage.setItem(pinnedKey,JSON.stringify([saved.task.id,...(Array.isArray(pinned)?pinned:[]).filter(id=>id!==saved.task.id)]));
+          } catch { }
+          window.dispatchEvent(new CustomEvent("mysession:task-order-synced",{detail:{userId:authUserId,order:saved.order,source:"prejoin"}}));
+          emitRoomTasksSync({action:"insert",userId:authUserId,taskId:saved.task.id,sessionId:session?.id});
+          handlePublicPanelTasksChange([{text:saved.task.text,completed:false},...ownTileTasks.filter(task=>task.text!==saved.task.text)]);
+        }
+      }
+    } catch (error) {
+      setDeviceError("Could not save your pre-join setup. Please retry. " + String((error as any)?.message || ""));
+      joinFlowStartedRef.current = false;
+      connectingFromPrejoinRef.current = false;
+      return;
+    } finally { prejoinSaveBusyRef.current = false; }
 
     setDisplayName(nm);
     setSelectedAudioOutputId(pj.audioOutputId || "default");
@@ -21975,6 +22014,7 @@ export function RoomPageLiveKit({
       />
 
       <PreJoinModal
+        tilePreview={{theme,avatarUrl:localAvatarUrl || undefined,timeZone:prejoinZoneDraft || localProfileTimeZone || Intl.DateTimeFormat().resolvedOptions().timeZone,task:prejoinTaskDraft,onTimeZoneChange:setPrejoinZoneDraft,onTaskChange:setPrejoinTaskDraft}}
         open={prejoinOpen && !!authUserId && !activeBan}
         theme={theme}
         devices={devices}
