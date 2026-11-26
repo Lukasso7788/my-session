@@ -35,6 +35,7 @@ import { seoRouteManifest } from "./data/seoRouteManifest";
 
 import NotFoundPage from "./pages/NotFoundPage";
 
+const DownloadAndroidPage = lazy(() => import("./pages/DownloadAndroidPage"));
 const DownloadAppPage = lazy(() => import("./pages/DownloadAppPage"));
 const DataDrivenSeoPage = lazy(() => import("./pages/seo/DataDrivenSeoPage"));
 // Keep bundled editorial markdown out of the room and landing bundles.
@@ -104,6 +105,7 @@ export default function App() {
           <Route path="/one-on-one" element={<Navigate to="/sessions?tab=one-on-one" replace />} />
 
           <Route path="/sessions" element={<SessionsPage />} />
+          <Route path="/download-android" element={<DownloadAndroidPage />} />
           <Route path="/download-app" element={<DownloadAppPage />} />
           <Route path="/host-guide" element={<HostGuideRedirect />} />
           <Route path="/sessions-concept" element={<Navigate to="/sessions" replace />} />

@@ -7,3 +7,10 @@ export const WINDOWS_APP_DOWNLOAD = {
     size: "116 MB",
     url: "https://github.com/Lukasso7788/my-session/releases/download/desktop-latest/MySession-Setup-0.4.5.exe",
 } as const;
+
+export const ANDROID_APP_PAGE_PATH = "/download-android";
+export const ANDROID_APP_DOWNLOAD = {
+    version: "0.2.9",
+    size: "59.4 MB",
+    url: "https://github.com/Lukasso7788/my-session/releases/download/android-v0.2.9/MySession-Android-0.2.9-native-preview.apk",
+} as const;

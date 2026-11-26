@@ -17,7 +17,7 @@ import { PAYWALL_ENABLED } from "../lib/flags";
 import { getMembershipBadge, isComplimentaryPro } from "../lib/membershipPresentation";
 import { defaultAvatarUrl } from "../lib/defaultAvatar";
 
-import { APP_DOWNLOAD_PAGE_PATH } from "../lib/appDownloads";
+import { ANDROID_APP_PAGE_PATH, APP_DOWNLOAD_PAGE_PATH } from "../lib/appDownloads";
 
 const BRAND_BLACK = "#2F2F2F";
 
@@ -25,15 +25,6 @@ function WindowsAppIcon({ className = "h-5 w-5" }: { className?: string }) {
     return (
         <svg className={className} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
             <path d="M2 4.4 10.8 3v8.2H2V4.4Zm10.2-1.6L22 1.3v9.9h-9.8V2.8ZM2 12.6h8.8v8.2L2 19.4v-6.8Zm10.2 0H22v9.9L12.2 21v-8.4Z" />
-        </svg>
-    );
-}
-
-function AndroidAppIcon({ className = "h-5 w-5" }: { className?: string }) {
-    return (
-        <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" aria-hidden="true">
-            <path d="M6 10h12v7.5a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V10ZM6 10a6 6 0 0 1 12 0M8 3.5 6.5 1.8M16 3.5l1.5-1.7M3.5 10v7M20.5 10v7M9 19.5V22M15 19.5V22" />
-            <path d="M9 7.5h.01M15 7.5h.01" strokeWidth="2.5" />
         </svg>
     );
 }
@@ -54,14 +45,14 @@ function AppDownloadOptions({ onSelect }: { onSelect?: () => void }) {
                     <span>Windows</span>
                 </Link>
                 <Link
-                    to={`${APP_DOWNLOAD_PAGE_PATH}#android`}
+                    to={ANDROID_APP_PAGE_PATH}
                     onClick={onSelect}
-                    aria-label="View Android app availability"
-                    title="Android app coming soon"
-                    className="flex min-h-12 flex-col items-center justify-center gap-1 rounded-lg border border-dashed border-gray-200 py-2 text-xs text-gray-400"
+                    aria-label="View Android app download"
+                    title="Download MySession for Android"
+                    className="flex min-h-12 flex-col items-center justify-center gap-1 rounded-lg border border-gray-200 bg-white py-2 text-xs font-medium text-brandBlack hover:bg-gray-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-green-600"
                 >
-                    <AndroidAppIcon />
-                    <span>Android · Soon</span>
+                    <img src="/icons/android-app.svg" alt="" className="h-5 w-5" />
+                    <span>Android</span>
                 </Link>
             </div>
         </div>

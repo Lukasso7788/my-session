@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { Link } from "react-router-dom";
 import { ArrowDownToLine, ArrowRight, Check, Monitor, Smartphone } from "lucide-react";
-import { WINDOWS_APP_DOWNLOAD } from "../lib/appDownloads";
+import { ANDROID_APP_PAGE_PATH, WINDOWS_APP_DOWNLOAD } from "../lib/appDownloads";
 
 export default function DownloadAppPage() {
     useEffect(() => {
@@ -44,9 +44,9 @@ export default function DownloadAppPage() {
                     <section id="android" aria-labelledby="android-app-heading" className="scroll-mt-24 rounded-3xl border border-[#E2E5EA] bg-[#F0F2F5] p-6 sm:p-8">
                         <div className="grid h-12 w-12 place-items-center rounded-2xl border border-white bg-white/70 text-[#747B87]"><Smartphone size={24} aria-hidden="true" /></div>
                         <h2 id="android-app-heading" className="mt-6 text-xl font-semibold">MySession for Android</h2>
-                        <span className="mt-3 inline-block rounded-full border border-[#D9DDE4] px-3 py-1 text-xs font-medium text-[#626A77]">In development</span>
-                        <p className="mt-4 text-sm leading-6 text-[#686C73]">The Android app is not publicly available yet. You can still join MySession from your browser on your phone or tablet.</p>
-                        <Link to="/sessions" className="mt-5 inline-flex items-center gap-2 rounded text-sm font-medium text-[#315DCB] hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#5288FF]">Continue in your browser <ArrowRight size={15} aria-hidden="true" /></Link>
+                        <span className="mt-3 inline-block rounded-full border border-[#D9DDE4] px-3 py-1 text-xs font-medium text-[#626A77]">Preview available</span>
+                        <p className="mt-4 text-sm leading-6 text-[#686C73]">Try the Android preview and see how to install the APK.</p>
+                        <Link to={ANDROID_APP_PAGE_PATH} className="mt-5 inline-flex items-center gap-2 rounded text-sm font-medium text-[#315DCB] hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#5288FF]">Get the Android app <ArrowRight size={15} aria-hidden="true" /></Link>
                     </section>
                 </div>
 
