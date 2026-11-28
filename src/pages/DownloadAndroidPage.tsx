@@ -22,7 +22,7 @@ export default function DownloadAndroidPage() {
                 <p className="mt-3 text-sm text-gray-600">Preview {ANDROID_APP_DOWNLOAD.version} · Android 8.0+ · {ANDROID_APP_DOWNLOAD.size}</p>
                 <h2 className="mt-8 text-lg font-semibold">Install the app</h2>
                 <p className="mt-2 text-sm leading-6 text-gray-600">Open the APK on your Android device. If prompted, allow your browser or file manager to install it, then follow the Android installer.</p>
-                <p className="mt-3 text-sm leading-6 text-gray-600">Screen sharing is unavailable in this preview. Tablet compatibility is still being tested.</p>
+                <p className="mt-3 text-sm leading-6 text-gray-600">In a room, open the More menu and select Screen share. Android will ask what to share. Tablet compatibility is still being tested.</p>
                 <Link to={APP_DOWNLOAD_PAGE_PATH} className="mt-6 inline-block text-sm font-medium text-[#315DCB] hover:underline">Get MySession for Windows</Link>
             </div>
         </main>

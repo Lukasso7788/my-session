@@ -10,7 +10,7 @@ export const WINDOWS_APP_DOWNLOAD = {
 
 export const ANDROID_APP_PAGE_PATH = "/download-android";
 export const ANDROID_APP_DOWNLOAD = {
-    version: "0.2.9",
+    version: "0.2.12",
     size: "59.4 MB",
-    url: "https://github.com/Lukasso7788/my-session/releases/download/android-v0.2.9/MySession-Android-0.2.9-native-preview.apk",
+    url: "https://github.com/Lukasso7788/my-session/releases/download/android-v0.2.12/MySession-Android-0.2.12-native-preview.apk",
 } as const;
