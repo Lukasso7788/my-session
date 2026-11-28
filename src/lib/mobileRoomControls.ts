@@ -147,6 +147,13 @@ function makeMenuItem(
   item.disabled = false;
   item.removeAttribute("aria-pressed");
   item.textContent = label;
+  if (key === "screen") {
+    const icon = document.createElement("span");
+    icon.setAttribute("aria-hidden", "true");
+    icon.className = "h-4 w-4 shrink-0 bg-current";
+    icon.style.mask = 'url("/icons/screen-share-light.svg") center / contain no-repeat';
+    item.prepend(icon);
+  }
 
   item.addEventListener("click", (event) => {
     event.preventDefault();
