@@ -23,6 +23,7 @@ import { CreateSessionModalProvider } from "./context/CreateSessionModalContext"
 import { storeReferralCodeFromUrl } from "./lib/referrals";
 import AppBootstrapGate from "./components/AppBootstrapGate";
 import { RoomEntryGate } from "./components/RoomEntryGate";
+import { AndroidRoomGate } from "./components/AndroidRoomGate";
 
 import GroupFocusSessionsPage from "./pages/seo/GroupFocusSessionsPage";
 import SilentCoworkingPage from "./pages/seo/SilentCoworkingPage";
@@ -216,11 +217,11 @@ export default function App() {
 
         <Route path="/vectorizer" element={<IconVectorizerPage />} />
 
-        <Route path="/room-iframe/:id" element={<RoomPageIFrame />} />
+        <Route path="/room-iframe/:id" element={<AndroidRoomGate><RoomPageIFrame /></AndroidRoomGate>} />
         <Route path="/room-livekit/:id" element={<RoomPageLiveKitEntry />} />
         <Route
           path="/room-livekit-clean/:id"
-          element={<RoomPageLiveKitClean />}
+          element={<AndroidRoomGate><RoomPageLiveKitClean /></AndroidRoomGate>}
         />
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register" element={<RegisterPage />} />

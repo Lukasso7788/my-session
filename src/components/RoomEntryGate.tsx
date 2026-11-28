@@ -2,6 +2,7 @@ import { useLayoutEffect, useState, type ReactNode } from "react";
 
 import { consumeRecentRoomResume } from "../lib/recentRoomResume";
 import { RoomCrashBoundary } from "./RoomErrorBoundary";
+import { AndroidRoomGate } from "./AndroidRoomGate";
 
 const MOBILE_ROOM_LEASE_PREFIX = "mysession_mobile_room_lease:";
 
@@ -31,6 +32,10 @@ function clearRoomEntryRecoveryLease(sessionId: string) {
  * prejoin.
  */
 export function RoomEntryGate({ sessionId, children }: { sessionId: string; children: ReactNode }) {
+  return <AndroidRoomGate><PreparedRoom sessionId={sessionId}>{children}</PreparedRoom></AndroidRoomGate>;
+}
+
+function PreparedRoom({ sessionId, children }: { sessionId: string; children: ReactNode }) {
   const id = String(sessionId || "").trim();
   const [preparedSessionId, setPreparedSessionId] = useState("");
 
